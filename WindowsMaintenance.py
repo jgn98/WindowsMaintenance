@@ -135,21 +135,38 @@ def main():
 
     # Track overall success
     success_count = 0
-    total_commands = 4
+    total_commands = 7
 
     # 1. Flush DNS Cache
     if run_command("ipconfig /flushdns", "Flush DNS Cache") == 0:
         success_count += 1
 
-    # 2. Update all software with Winget
-    if run_command(
-            "winget update --all --include-unknown --accept-source-agreements --accept-package-agreements --silent",
-            "Update all software with Winget"
-    ) == 0:
+    # 2. DISM RestoreHealth (comprehensive repair)
+    print("\n==== DISM SYSTEM IMAGE REPAIR ====")
+    print("This operation may take 10-30 minutes to complete.")
+    print("Please be patient while the system image is being repaired...")
+
+    if run_command("DISM /Online /Cleanup-Image /RestoreHealth", "DISM Restore Health") == 0:
         success_count += 1
 
     # 3. Run System File Checker
     if run_command("sfc /scannow", "System File Checker") == 0:
+        success_count += 1
+
+    # 4. Reset Winsock
+    if run_command("netsh winsock reset", "Reset Winsock Catalog") == 0:
+        success_count += 1
+
+    # 5. Reset TCP/IP Stack
+    if run_command("netsh int ip reset", "Reset TCP/IP Stack") == 0:
+        success_count += 1
+        print("Note: A system restart is recommended after resetting TCP/IP stack.")
+
+    # 6. Update all software with Winget
+    if run_command(
+            "winget update --all --include-unknown --accept-source-agreements --accept-package-agreements --silent",
+            "Update all software with Winget"
+    ) == 0:
         success_count += 1
 
     # 4. Check Disk
