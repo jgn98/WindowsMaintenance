@@ -101,3 +101,7 @@ instance/
 
 # Rope project settings
 .ropeproject
+
+build/
+dist/
+*.spec
