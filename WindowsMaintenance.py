@@ -4,7 +4,6 @@ import time
 import ctypes
 import sys
 import tempfile
-import shutil
 
 
 def is_admin():
@@ -159,10 +158,14 @@ def main():
         success_count += 1
         print("Note: A system restart is recommended after resetting TCP/IP stack.")
 
-    # 6. Update all software with Winget
+    # 6. Update all software with Winget (interactive mode)
+    print("\n==== SOFTWARE UPDATES ====")
+    print("Checking for software updates with Winget...")
+    print("You will be prompted to confirm each update.")
+
     if run_command(
-            "winget update --all --include-unknown --accept-source-agreements --accept-package-agreements --silent",
-            "Update all software with Winget"
+            "winget upgrade --all --include-unknown",
+            "Check and update software with Winget"
     ) == 0:
         success_count += 1
 
@@ -205,9 +208,21 @@ def create_manifest_file():
       </requestedPrivileges>
     </security>
   </trustInfo>
+  <application xmlns="urn:schemas-microsoft-com:asm.v3">
+    <windowsSettings>
+      <dpiAware xmlns="http://schemas.microsoft.com/SMI/2005/WindowsSettings">true</dpiAware>
+      <longPathAware xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">true</longPathAware>
+    </windowsSettings>
+  </application>
+  <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
+    <application>
+      <!-- Windows 10 and 11 -->
+      <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}"/>
+    </application>
+  </compatibility>
 </assembly>
 '''
-    manifest_path = os.path.join(os.path.dirname(os.path.abspath(sys.argv[0])), "elevation.manifest")
+    manifest_path = os.path.join(os.path.dirname(os.path.abspath(sys.argv[0])), "WindowsMaintenance.manifest")
     try:
         with open(manifest_path, "w") as f:
             f.write(manifest)
@@ -218,8 +233,7 @@ def create_manifest_file():
 
 
 if __name__ == "__main__":
-    # You can uncomment the line below if you plan to compile this script to an exe
-    # and want to use the manifest method instead
-    # create_manifest_file()
+    # Create manifest file for UAC elevation when compiled to exe
+    create_manifest_file()
 
     main()
