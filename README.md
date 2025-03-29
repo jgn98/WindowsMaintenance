@@ -1,11 +1,30 @@
-The script will automatically check if it is run as admin, otherwise it prompts admin rights.
+A Python script that automatically runs common Windows maintenance commands with admin privileges.
+Commands Executed
 
-The following powershell prompts will be run.
+ipconfig /flushdns - Clears DNS cache
+DISM /Online /Cleanup-Image /RestoreHealth - Repairs Windows system image
+sfc /scannow - Scans and repairs system files
+netsh winsock reset - Resets Windows Sockets
+netsh int ip reset - Resets TCP/IP stack
+winget update --all --include-unknown --accept-source-agreements --accept-package-agreements --silent - Updates all software
+chkdsk C: /f /r - Schedules disk check (optional)
 
-ipconfig /flushdns  # Clear DNS cache
+Usage
 
-winget update --all --include-unknown --accept-source-agreements --accept-package-agreements --silent  # Update all apps
+Save as pc_maintenance.py
+Run with python pc_maintenance.py
+Admin rights will be requested automatically
+Follow on-screen prompts
 
-sfc /scannow # Scan and repair windows system files
+Requirements
 
-chkdsk C: /f /r  # Check and repair disk errors
+Windows 10/11
+Python 3.6+
+Winget package manager
+
+Notes
+
+Some tasks (DISM) may take 15+ minutes
+System restart recommended after running
+TCP/IP reset may temporarily disconnect network
+
