@@ -48,19 +48,16 @@ def run_command(command, description):
 
     try:
         # For commands that need to show their output in real-time
-        if "sfc" in command or "chkdsk" in command or "winget" in command:
+        if "sfc" in command or "chkdsk" in command or "winget" in command or "DISM" in command:
+            # Run with direct console output instead of capturing
             process = subprocess.Popen(
                 command,
                 shell=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                universal_newlines=True
+                # Don't redirect stdout/stderr, let them go directly to console
+                # This prevents the character-by-character output issue
             )
 
-            # Print output in real-time
-            for line in process.stdout:
-                print(line, end='')
-
+            # Wait for the process to complete
             process.wait()
             exit_code = process.returncode
         else:
