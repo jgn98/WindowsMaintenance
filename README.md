@@ -6,7 +6,7 @@ DISM /Online /Cleanup-Image /RestoreHealth - Repairs Windows system image
 sfc /scannow - Scans and repairs system files
 netsh winsock reset - Resets Windows Sockets
 netsh int ip reset - Resets TCP/IP stack
-winget update --all --include-unknown --accept-source-agreements --accept-package-agreements --silent - Updates all software
+winget update --all --include-unknown - Updates all software
 chkdsk C: /f /r - Schedules disk check (optional)
 
 Usage
