@@ -1,4 +1,3 @@
-Windows Maintenance Utility
 A comprehensive system maintenance and optimization tool for Windows. This utility automates common maintenance tasks to help keep your system running smoothly.
 Features
 
