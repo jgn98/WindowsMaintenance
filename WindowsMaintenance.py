@@ -5,69 +5,37 @@ import ctypes
 import sys
 import tempfile
 import shutil
+from pathlib import Path
 
 
 def is_admin():
-    """Check if the script is running with administrator privileges"""
+    """Check if script has admin privileges"""
     try:
         return ctypes.windll.shell32.IsUserAnAdmin() != 0
-    except Exception:
+    except:
         return False
 
 
 def run_as_admin():
-    """Re-run the script with administrator privileges"""
-    # If frozen to exe (using PyInstaller or similar)
+    """Re-run script with admin privileges"""
     if getattr(sys, 'frozen', False):
         script = sys.executable
     else:
-        script = os.path.abspath(sys.argv[0])
+        script = str(Path(sys.argv[0]).resolve())
 
-    # Command to elevate privileges
-    cmd = (f'powershell -Command "Start-Process -FilePath \'{sys.executable}\' '
-           f'-ArgumentList \'{script}\' -Verb RunAs"')
+    cmd = f'powershell -Command "Start-Process -FilePath \'{sys.executable}\' -ArgumentList \'{script}\' -Verb RunAs"'
 
     try:
         subprocess.run(cmd, shell=True)
-    except subprocess.SubprocessError as elevation_error:
-        print(f"Error while trying to elevate privileges: {elevation_error}")
+    except Exception as e:
+        print(f"Error elevating privileges: {e}")
         input("Press Enter to exit...")
 
-    # Exit the current non-elevated process
     sys.exit(0)
 
 
-def create_admin_batch_launcher():
-    """Create a batch file that will run the script with admin privileges"""
-    # Get the full path of the current script
-    if getattr(sys, 'frozen', False):
-        script_path = sys.executable
-    else:
-        script_path = os.path.abspath(sys.argv[0])
-
-    # Create a temporary directory for the batch file
-    temp_dir = tempfile.mkdtemp()
-    batch_path = os.path.join(temp_dir, "run_with_admin.bat")
-
-    # Create batch file content
-    batch_content = f"""@echo off
-echo Requesting administrative privileges...
-powershell -Command "Start-Process -FilePath '{sys.executable}' -ArgumentList '{script_path}' -Verb RunAs"
-"""
-
-    # Write the batch file
-    try:
-        with open(batch_path, "w") as batch_file:
-            batch_file.write(batch_content)
-        return batch_path
-    except OSError as file_error:
-        print(f"Error creating batch file: {file_error}")
-        return None
-
-
 def create_manifest_file():
-    """Create a manifest file for UAC elevation"""
-    # This is an alternative method that works when compiled to exe
+    """Create UAC manifest for executable"""
     manifest = '''
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
@@ -86,43 +54,32 @@ def create_manifest_file():
   </application>
   <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
     <application>
-      <!-- Windows 10 and 11 -->
       <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}"/>
     </application>
   </compatibility>
 </assembly>
 '''
-    manifest_path = os.path.join(
-        os.path.dirname(os.path.abspath(sys.argv[0])),
-        "WindowsMaintenance.manifest"
-    )
+    manifest_path = str(Path(os.path.dirname(os.path.abspath(sys.argv[0]))) / "WindowsMaintenance.manifest")
     try:
-        with open(manifest_path, "w") as f:
+        with open(manifest_path, "w", encoding="utf-8") as f:
             f.write(manifest)
         return manifest_path
-    except OSError as manifest_error:
-        print(f"Could not create manifest file: {manifest_error}")
+    except Exception as e:
+        print(f"Could not create manifest: {e}")
         return None
 
 
 def run_command(command, description):
-    """Run a system command and provide feedback"""
-    print(f"\n{'=' * 60}")
-    print(f"Running: {description}")
-    print(f"Command: {command}")
-    print(f"{'=' * 60}\n")
+    """Run system command with feedback"""
+    print(f"\n{'=' * 60}\nRunning: {description}\nCommand: {command}\n{'=' * 60}\n")
 
     try:
-        # For commands that need to show their output in real-time
+        # Real-time output for certain commands
         if any(cmd in command for cmd in ["sfc", "chkdsk", "winget", "DISM"]):
-            # Run with direct console output instead of capturing
             process = subprocess.Popen(command, shell=True)
-
-            # Wait for the process to complete
             process.wait()
             exit_code = process.returncode
         else:
-            # For simpler commands
             result = subprocess.run(command, shell=True, capture_output=True, text=True)
             print(result.stdout)
             if result.stderr:
@@ -135,8 +92,8 @@ def run_command(command, description):
             print(f"\n❌ {description} failed with exit code {exit_code}.")
 
         return exit_code
-    except subprocess.SubprocessError as subprocess_error:
-        print(f"\n❌ Error executing {description}: {str(subprocess_error)}")
+    except Exception as e:
+        print(f"\n❌ Error executing {description}: {e}")
         return -1
 
 
@@ -148,65 +105,42 @@ def clear_temp_files():
 
     print("\n==== CLEANING TEMPORARY FILES AND APPDATA ====")
 
-    # Get system and user environment paths
-    temp_dir = os.environ.get('TEMP')
-    windows_dir = os.environ.get('SystemRoot', 'C:\\Windows')
-    appdata_dir = os.environ.get('APPDATA')
-    localappdata_dir = os.environ.get('LOCALAPPDATA')
-    userprofile_dir = os.environ.get('USERPROFILE')
+    # Environment paths - convert to strings explicitly
+    temp_dir = str(os.environ.get('TEMP', ''))
+    windows_dir = str(os.environ.get('SystemRoot', 'C:\\Windows'))
+    appdata_dir = str(os.environ.get('APPDATA', ''))
+    localappdata_dir = str(os.environ.get('LOCALAPPDATA', ''))
 
-    # Locations to clean
-    temp_locations = [
-        # Windows Temp folders
+    # Locations to clean - ensure all paths are strings
+    locations = [
+        # System temp folders
         temp_dir,
         os.path.join(windows_dir, 'Temp'),
-        # User's Temporary Internet Files
         os.path.join(localappdata_dir, 'Microsoft\\Windows\\INetCache'),
-        # Windows Prefetch folder
         os.path.join(windows_dir, 'Prefetch'),
-        # Recent items
         os.path.join(appdata_dir, 'Microsoft\\Windows\\Recent'),
-        # Windows Error Reporting
         os.path.join(localappdata_dir, 'Microsoft\\Windows\\WER'),
-        # Windows Update Cleanup
         os.path.join(windows_dir, 'SoftwareDistribution\\Download'),
-    ]
 
-    # AppData folders to clean
-    appdata_locations = [
-        # Browsers cache
+        # AppData folders
         os.path.join(localappdata_dir, 'Google\\Chrome\\User Data\\Default\\Cache'),
         os.path.join(localappdata_dir, 'Mozilla\\Firefox\\Profiles'),
         os.path.join(localappdata_dir, 'Microsoft\\Edge\\User Data\\Default\\Cache'),
-        # Application caches
         os.path.join(localappdata_dir, 'Microsoft\\Teams\\Cache'),
         os.path.join(localappdata_dir, 'Microsoft\\Teams\\blob_storage'),
         os.path.join(appdata_dir, 'Zoom\\logs'),
         os.path.join(appdata_dir, 'Slack\\Cache'),
-        os.path.join(appdata_dir, 'Spotify\\Data'),
         os.path.join(localappdata_dir, 'Discord\\Cache'),
         os.path.join(localappdata_dir, 'Microsoft\\Office\\16.0\\OfficeFileCache'),
-        # Windows app caches
-        os.path.join(localappdata_dir, 'Packages'),
-        os.path.join(localappdata_dir, 'Microsoft\\Windows\\Explorer'),
-        os.path.join(localappdata_dir, 'Microsoft\\Windows\\Caches'),
-        # Downloaded Program Files
-        os.path.join(windows_dir, 'Downloaded Program Files'),
-        # Temporary Downloads (optional - uncomment if desired)
-        # os.path.join(userprofile_dir, 'Downloads'),
     ]
 
-    # Combine all locations to clean
-    all_locations = temp_locations + appdata_locations
+    # File extensions to target
+    extensions = ['.tmp', '.temp', '.log', '.old', '.bak', '.chk', '.~', '.cache', '.etl', '.evt', '.dmp']
 
-    # File extensions to target for cleanup
-    extensions_to_clean = ['.tmp', '.temp', '.log', '.old', '.bak', '.chk', '.~',
-                           '.cache', '.etl', '.evt', '.dmp', '.dump']
-
-    print(f"Scanning for files in {len(all_locations)} locations...")
+    print(f"Scanning for files in {len(locations)} locations...")
 
     # Process each location
-    for location in all_locations:
+    for location in locations:
         if not location or not os.path.exists(location):
             continue
 
@@ -215,38 +149,32 @@ def clear_temp_files():
             location_file_count = 0
             location_size_bytes = 0
 
-            # If it's a directory, walk through and delete files
             if os.path.isdir(location):
                 for root, dirs, files in os.walk(location, topdown=False):
-                    # Delete files first
+                    # Delete files
                     for file in files:
                         file_path = os.path.join(root, file)
                         try:
-                            # Check if the file has an extension to clean
                             _, ext = os.path.splitext(file_path)
-                            # Clean if it matches extensions or is in an appdata location
-                            if ext.lower() in extensions_to_clean or location in appdata_locations:
+                            if ext.lower() in extensions or location != temp_dir:
                                 try:
                                     file_size = os.path.getsize(file_path)
                                     os.remove(file_path)
                                     location_file_count += 1
                                     location_size_bytes += file_size
                                 except (PermissionError, OSError):
-                                    # Skip files that are in use or protected
                                     pass
-                        except Exception:
-                            # Skip files with problems
+                        except:
                             pass
 
-                    # Try to remove empty folders in appdata locations
-                    if location in appdata_locations:
-                        for dir_name in dirs:
-                            try:
-                                dir_path = os.path.join(root, dir_name)
-                                if os.path.exists(dir_path) and not os.listdir(dir_path):
-                                    os.rmdir(dir_path)
-                            except (PermissionError, OSError):
-                                pass
+                    # Remove empty folders
+                    for dir_name in dirs:
+                        try:
+                            dir_path = str(os.path.join(root, dir_name))
+                            if os.path.exists(dir_path) and not os.listdir(dir_path):
+                                os.rmdir(dir_path)
+                        except:
+                            pass
 
             # Track statistics
             if location_file_count > 0:
@@ -258,16 +186,13 @@ def clear_temp_files():
             else:
                 print("✓ No applicable files to clean")
 
-        except Exception as temp_error:
-            print(f"× Error cleaning {location}: {str(temp_error)}")
+        except Exception as e:
+            print(f"× Error cleaning {location}: {e}")
 
-    # Run Windows Disk Cleanup utility for system files
-    print("\n==== SYSTEM DISK CLEANUP ====")
-    run_disk_cleanup = input("Would you like to run the Windows Disk Cleanup utility for system files? (y/n): ").lower()
+    # Windows Disk Cleanup
+    run_disk_cleanup = input("\nRun Windows Disk Cleanup utility? (y/n): ").lower()
     if run_disk_cleanup == 'y':
-        print("\nRunning Windows Disk Cleanup utility...")
-        # Use /sageset:1 to run with pre-configured settings (if previously set up)
-        # Or use /d to clean the system drive
+        print("\nRunning Windows Disk Cleanup...")
         run_command("cleanmgr /d C:", "Windows Disk Cleanup")
 
     # Summary
@@ -292,136 +217,114 @@ def clear_browser_data():
 
     browsers_cleared = []
 
+    # Helper function to kill browser process
+    def kill_browser(process_name):
+        try:
+            subprocess.run(f'taskkill /F /IM {process_name}', shell=True,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            time.sleep(1)
+        except:
+            pass
+
     # Chrome
     try:
-        chrome_profiles_path = os.path.join(os.environ.get('LOCALAPPDATA', ''),
-                                            'Google\\Chrome\\User Data')
+        chrome_profiles_path = os.path.join(str(os.environ.get('LOCALAPPDATA', '')), 'Google\\Chrome\\User Data')
         if os.path.exists(chrome_profiles_path):
             print("\nClearing Google Chrome data...")
-            # Find all profiles (Default and Profile*)
-            profiles = ['Default']
-            for item in os.listdir(chrome_profiles_path):
-                if item.startswith('Profile '):
-                    profiles.append(item)
+            kill_browser("chrome.exe")
 
-            # Try to close Chrome first
+            # Find profiles
+            profiles = ['Default']
             try:
-                subprocess.run('taskkill /F /IM chrome.exe', shell=True,
-                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                time.sleep(1)  # Give it time to close
-            except subprocess.SubprocessError:
+                profiles += [item for item in os.listdir(chrome_profiles_path) if item.startswith('Profile ')]
+            except Exception:
                 pass
 
-            # Clear data for each profile
+            # Chrome data to clear
+            chrome_files = ['History', 'History-journal', 'Cookies', 'Cookies-journal',
+                            'Cache', 'Media Cache', 'Visited Links', 'Network Action Predictor',
+                            'Login Data', 'Web Data']
+
+            # Clear each profile
             for profile in profiles:
                 profile_path = os.path.join(chrome_profiles_path, profile)
                 if os.path.isdir(profile_path):
-                    # Locations to clear
-                    locations = [
-                        os.path.join(profile_path, 'History'),
-                        os.path.join(profile_path, 'History-journal'),
-                        os.path.join(profile_path, 'Cookies'),
-                        os.path.join(profile_path, 'Cookies-journal'),
-                        os.path.join(profile_path, 'Cache'),
-                        os.path.join(profile_path, 'Media Cache'),
-                        os.path.join(profile_path, 'Visited Links'),
-                        os.path.join(profile_path, 'Network Action Predictor'),
-                        os.path.join(profile_path, 'Login Data'),
-                        os.path.join(profile_path, 'Web Data')
-                    ]
-
-                    for loc in locations:
+                    for file in chrome_files:
+                        path = os.path.join(profile_path, file)
                         try:
-                            if os.path.isfile(loc):
-                                os.remove(loc)
-                            elif os.path.isdir(loc):
-                                shutil.rmtree(loc, ignore_errors=True)
-                        except (PermissionError, OSError):
+                            if os.path.isfile(path):
+                                os.remove(path)
+                            elif os.path.isdir(path):
+                                shutil.rmtree(path, ignore_errors=True)
+                        except:
                             pass
 
             browsers_cleared.append("Chrome")
             print("✓ Chrome data cleared")
-    except Exception as chrome_error:
-        print(f"× Error clearing Chrome data: {str(chrome_error)}")
+    except Exception as e:
+        print(f"× Error clearing Chrome data: {e}")
 
     # Firefox
     try:
-        firefox_path = os.path.join(os.environ.get('APPDATA', ''),
-                                    'Mozilla\\Firefox\\Profiles')
+        firefox_path = os.path.join(str(os.environ.get('APPDATA', '')), 'Mozilla\\Firefox\\Profiles')
         if os.path.exists(firefox_path):
             print("\nClearing Firefox data...")
-            # Try to close Firefox first
-            try:
-                subprocess.run('taskkill /F /IM firefox.exe', shell=True,
-                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                time.sleep(1)  # Give it time to close
-            except subprocess.SubprocessError:
-                pass
+            kill_browser("firefox.exe")
 
-            # Process each profile
+            # Firefox files to clear
+            firefox_files = ['cookies.sqlite', 'cookies.sqlite-journal', 'places.sqlite',
+                             'places.sqlite-journal', 'formhistory.sqlite', 'webappsstore.sqlite']
+
+            # Clear each profile
             for root, dirs, files in os.walk(firefox_path):
                 for file in files:
-                    if file in ['cookies.sqlite', 'cookies.sqlite-journal',
-                                'places.sqlite', 'places.sqlite-journal',
-                                'formhistory.sqlite', 'webappsstore.sqlite']:
+                    if file in firefox_files:
                         try:
                             os.remove(os.path.join(root, file))
-                        except (PermissionError, OSError):
+                        except:
                             pass
 
             browsers_cleared.append("Firefox")
             print("✓ Firefox data cleared")
-    except Exception as firefox_error:
-        print(f"× Error clearing Firefox data: {str(firefox_error)}")
+    except Exception as e:
+        print(f"× Error clearing Firefox data: {e}")
 
     # Edge
     try:
-        edge_path = os.path.join(os.environ.get('LOCALAPPDATA', ''),
-                                 'Microsoft\\Edge\\User Data')
+        edge_path = os.path.join(str(os.environ.get('LOCALAPPDATA', '')), 'Microsoft\\Edge\\User Data')
         if os.path.exists(edge_path):
             print("\nClearing Microsoft Edge data...")
-            # Try to close Edge first
+            kill_browser("msedge.exe")
+
+            # Find profiles
+            profiles = ['Default']
             try:
-                subprocess.run('taskkill /F /IM msedge.exe', shell=True,
-                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                time.sleep(1)  # Give it time to close
-            except subprocess.SubprocessError:
+                profiles += [item for item in os.listdir(edge_path) if item.startswith('Profile ')]
+            except Exception:
                 pass
 
-            # Find all profiles (Default and Profile*)
-            profiles = ['Default']
-            for item in os.listdir(edge_path):
-                if item.startswith('Profile '):
-                    profiles.append(item)
+            # Edge data to clear
+            edge_files = ['History', 'History-journal', 'Cookies', 'Cookies-journal',
+                          'Cache', 'Media Cache', 'Visited Links']
 
-            # Clear data for each profile
+            # Clear each profile
             for profile in profiles:
                 profile_path = os.path.join(edge_path, profile)
                 if os.path.isdir(profile_path):
-                    # Locations to clear
-                    locations = [
-                        os.path.join(profile_path, 'History'),
-                        os.path.join(profile_path, 'History-journal'),
-                        os.path.join(profile_path, 'Cookies'),
-                        os.path.join(profile_path, 'Cookies-journal'),
-                        os.path.join(profile_path, 'Cache'),
-                        os.path.join(profile_path, 'Media Cache'),
-                        os.path.join(profile_path, 'Visited Links')
-                    ]
-
-                    for loc in locations:
+                    for file in edge_files:
+                        path = os.path.join(profile_path, file)
                         try:
-                            if os.path.isfile(loc):
-                                os.remove(loc)
-                            elif os.path.isdir(loc):
-                                shutil.rmtree(loc, ignore_errors=True)
-                        except (PermissionError, OSError):
+                            if os.path.isfile(path):
+                                os.remove(path)
+                            elif os.path.isdir(path):
+                                shutil.rmtree(path, ignore_errors=True)
+                        except:
                             pass
 
             browsers_cleared.append("Edge")
             print("✓ Edge data cleared")
-    except Exception as edge_error:
-        print(f"× Error clearing Edge data: {str(edge_error)}")
+    except Exception as e:
+        print(f"× Error clearing Edge data: {e}")
 
     # Summary
     if browsers_cleared:
@@ -437,7 +340,7 @@ def clean_registry():
     """Clean Windows Registry of common issues"""
     print("\n==== REGISTRY CLEANUP ====")
     print("This will scan and clean the Windows Registry for common issues.")
-    print("WARNING: Registry cleaning can potentially cause system issues if critical entries are removed.")
+    print("WARNING: Registry cleaning can potentially cause system issues.")
     print("This tool only targets safe, common problem areas.")
 
     proceed = input("\nDo you want to clean the Windows Registry? (y/n): ").lower()
@@ -448,60 +351,60 @@ def clean_registry():
     print("\nScanning registry for issues...")
     registry_fixes = 0
 
-    # Create a temporary REG file with cleanup commands
+    # Create temporary REG file
     try:
         temp_reg_file = os.path.join(tempfile.gettempdir(), "registry_cleanup.reg")
-        with open(temp_reg_file, "w") as reg_file:
+        with open(temp_reg_file, "w", encoding="utf-8") as reg_file:
             reg_file.write("Windows Registry Editor Version 5.00\n\n")
 
-            # Remove broken/invalid file associations
-            reg_file.write("; Remove broken file associations\n")
-            reg_file.write(
-                "[-HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.???\\UserChoice]\n\n")
+            # Registry keys to clean
+            registry_entries = [
+                # File associations
+                ("Remove broken file associations",
+                 "[-HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.???\\UserChoice]"),
 
-            # Clean MUICache (unused program entries)
-            reg_file.write("; Clean MUICache\n")
-            reg_file.write("[-HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\ShellNoRoam\\MUICache]\n")
-            reg_file.write("[HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\ShellNoRoam\\MUICache]\n\n")
+                # MUICache
+                ("Clean MUICache",
+                 "[-HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\ShellNoRoam\\MUICache]\n"
+                 "[HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\ShellNoRoam\\MUICache]"),
 
-            # Remove orphaned software entries
-            reg_file.write("; Remove orphaned software entries\n")
-            reg_file.write("[-HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Applets\\Regedit]\n")
-            reg_file.write("[HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Applets\\Regedit]\n\n")
+                # Orphaned software
+                ("Remove orphaned software entries",
+                 "[-HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Applets\\Regedit]\n"
+                 "[HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Applets\\Regedit]"),
 
-            # Clean recent documents list
-            reg_file.write("; Clean recent documents list\n")
-            reg_file.write("[-HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\RecentDocs]\n")
-            reg_file.write(
-                "[HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\RecentDocs]\n\n")
+                # Recent docs
+                ("Clean recent documents list",
+                 "[-HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\RecentDocs]\n"
+                 "[HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\RecentDocs]"),
 
-            # Clean Run MRU (Most Recently Used commands)
-            reg_file.write("; Clean Run MRU list\n")
-            reg_file.write("[-HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\RunMRU]\n")
-            reg_file.write("[HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\RunMRU]\n\n")
+                # Run MRU
+                ("Clean Run MRU list",
+                 "[-HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\RunMRU]\n"
+                 "[HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\RunMRU]"),
 
-            # Clean typedURLs (URLs typed in Internet Explorer/Edge)
-            reg_file.write("; Clean typed URLs\n")
-            reg_file.write("[-HKEY_CURRENT_USER\\Software\\Microsoft\\Internet Explorer\\TypedURLs]\n")
-            reg_file.write("[HKEY_CURRENT_USER\\Software\\Microsoft\\Internet Explorer\\TypedURLs]\n\n")
+                # Typed URLs
+                ("Clean typed URLs",
+                 "[-HKEY_CURRENT_USER\\Software\\Microsoft\\Internet Explorer\\TypedURLs]\n"
+                 "[HKEY_CURRENT_USER\\Software\\Microsoft\\Internet Explorer\\TypedURLs]")
+            ]
 
-        # Execute the REG file
+            # Write registry entries
+            for description, command in registry_entries:
+                reg_file.write(f"; {description}\n{command}\n\n")
+                registry_fixes += 1
+
+        # Execute REG file
         print("Applying registry fixes...")
         result = subprocess.run(f'regedit /s "{temp_reg_file}"', shell=True)
 
-        if result.returncode == 0:
-            registry_fixes += 6  # Number of sections we cleaned
-            print("✅ Registry fixes applied successfully.")
-        else:
-            print("⚠️ Some registry fixes may not have been applied.")
-
-        # Clean up temporary file
+        # Clean up temp file
         try:
             os.remove(temp_reg_file)
-        except (PermissionError, OSError):
+        except:
             pass
 
-        # Run additional registry cleanup using PowerShell
+        # Run PowerShell cleanup
         print("\nPerforming deep registry scan...")
         ps_cmd = 'powershell -Command "& {Get-ItemProperty -Path HKCU:\\Software\\*\\* -ErrorAction SilentlyContinue | Where-Object { $_.PSChildName -eq \'\' } | Remove-Item -ErrorAction SilentlyContinue -Force; exit 0}"'
         subprocess.run(ps_cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -513,8 +416,8 @@ def clean_registry():
 
         return True
 
-    except Exception as reg_error:
-        print(f"⚠️ Error during registry cleanup: {str(reg_error)}")
+    except Exception as e:
+        print(f"⚠️ Error during registry cleanup: {e}")
         return False
 
 
@@ -522,11 +425,7 @@ def main():
     if not is_admin():
         print("This script requires administrator privileges.")
         print("Requesting elevation now...")
-
-        # Method 1: Use PowerShell to relaunch
         run_as_admin()
-
-        # Exit current non-elevated process
         sys.exit(0)
 
     print("\n==== PC MAINTENANCE UTILITY ====")
@@ -539,11 +438,9 @@ def main():
         print("Operation cancelled.")
         return
 
-    # Track overall success
+    # Track success and required restarts
     success_count = 0
     total_commands = 10
-
-    # Track operations that require restart
     restart_required_ops = []
 
     # 1. Flush DNS Cache
@@ -564,7 +461,7 @@ def main():
         print("✅ Browser data cleanup completed successfully.")
     else:
         print("Browser data cleanup skipped.")
-        total_commands -= 1  # Adjust total if skipped
+        total_commands -= 1
 
     # 4. Clean Registry (Optional)
     if clean_registry():
@@ -573,7 +470,7 @@ def main():
         print("✅ Registry cleanup completed successfully.")
     else:
         print("Registry cleanup skipped.")
-        total_commands -= 1  # Adjust total if skipped
+        total_commands -= 1
 
     # 5. DISM System Image Check and Repair
     print("\n==== DISM SYSTEM IMAGE CHECK ====")
@@ -582,16 +479,14 @@ def main():
     # Run the quicker ScanHealth first
     scan_result = run_command("DISM /Online /Cleanup-Image /ScanHealth", "DISM Scan Health")
 
-    # Check if corruption was found and run RestoreHealth only if needed
     if scan_result == 0:
-        # Need to check output to see if corruption was detected
+        # Check if corruption was found
         check_cmd = 'powershell -Command "& {$output = dism /Online /Cleanup-Image /ScanHealth | Out-String; if ($output -match \'Component Store is repairable\' -or $output -match \'Component Store corruption\') {exit 1} else {exit 0}}"'
         corruption_check = subprocess.run(check_cmd, shell=True, capture_output=True, text=True)
 
         if corruption_check.returncode == 1:
             print("\n⚠️ System image corruption detected. Running repair operation...")
             print("This may take 10-30 minutes to complete.")
-            print("Please be patient while the system image is being repaired...")
 
             if run_command("DISM /Online /Cleanup-Image /RestoreHealth", "DISM Restore Health") == 0:
                 success_count += 1
@@ -602,11 +497,8 @@ def main():
             success_count += 1
     else:
         print("\n⚠️ DISM scan operation failed or was interrupted.")
-
-        # Ask user if they want to try RestoreHealth anyway
-        try_restore = input("\nDISM scan failed. Would you like to try full system repair anyway? (y/n): ").lower()
+        try_restore = input("\nDISM scan failed. Try full system repair anyway? (y/n): ").lower()
         if try_restore == 'y':
-            print("\nRunning system image repair. This may take 10-30 minutes...")
             if run_command("DISM /Online /Cleanup-Image /RestoreHealth", "DISM Restore Health") == 0:
                 success_count += 1
 
@@ -629,22 +521,19 @@ def main():
     print("\n==== SOFTWARE UPDATES ====")
     print("Checking for software updates with Winget...")
 
-    # First get list of available updates
-    print("Scanning for available updates...")
-    winget_list_cmd = "winget upgrade --include-unknown --source winget"
-
     try:
-        # Get the update list
+        # Get list of available updates
+        print("Scanning for available updates...")
+        winget_list_cmd = "winget upgrade --include-unknown --source winget"
         winget_result = subprocess.run(winget_list_cmd, shell=True, capture_output=True, text=True)
         winget_output = winget_result.stdout
 
         # Check if there are any updates available
-        if ("No installed package" in winget_output
-                or "All installed packages are up to date." in winget_output):
+        if "No installed package" in winget_output or "All installed packages are up to date." in winget_output:
             print("✅ All software is up to date.")
             success_count += 1
         else:
-            print("\nAvailable updates found. Would you like to:")
+            print("\nAvailable updates found. Options:")
             print("1. Update all (with confirmation for each)")
             print("2. Update all and automatically close running applications")
             print("3. Skip updates")
@@ -652,14 +541,13 @@ def main():
             choice = input("\nEnter your choice (1-3): ").strip()
 
             if choice == "1":
-                # Regular update with confirmation
                 if run_command("winget upgrade --all --include-unknown", "Update software with Winget") == 0:
                     success_count += 1
 
             elif choice == "2":
                 print("\nPreparing to update and close running applications...")
 
-                # Parse the winget output to get list of packages that need updating
+                # Parse packages needing updates
                 packages = []
                 for line in winget_output.splitlines():
                     if "winget" in line and "upgrade" in line:
@@ -672,20 +560,17 @@ def main():
                                 packages.append(package_name)
 
                 if packages:
-                    # Function to find and kill processes that might be related to these packages
                     print(f"Found {len(packages)} packages to update.")
                     print("Checking for related running processes...")
 
-                    # Get list of running processes
+                    # Get running processes
                     ps_command = 'powershell -Command "Get-Process | Select-Object ProcessName, Id | Format-Table -AutoSize | Out-String -Width 4096"'
                     process_result = subprocess.run(ps_command, shell=True, capture_output=True, text=True)
                     processes_output = process_result.stdout
 
-                    # Try to detect and kill processes
+                    # Detect and kill processes
                     killed_processes = []
                     for package in packages:
-                        # Create variations of the package name to match against processes
-                        # Strip non-alphanumeric to get base name
                         package_base = ''.join(c for c in package if c.isalnum()).lower()
                         for line in processes_output.splitlines():
                             parts = line.split()
@@ -694,31 +579,25 @@ def main():
                                 try:
                                     process_id = int(parts[-1])
 
-                                    # Check for potential matches with package name
+                                    # Check for matches
                                     if (process_name in package_base or package_base in process_name or
                                             any(process_name in p.lower() for p in package.split()) or
                                             any(p.lower() in process_name for p in package.split())):
 
-                                        confirm = input(
-                                            f"Found running process '{parts[0]}' (PID: {process_id}) "
-                                            f"that may be related to '{package}'. Kill it? (y/n): "
-                                        ).lower()
+                                        confirm = input(f"Found process '{parts[0]}' (PID: {process_id}) "
+                                                        f"related to '{package}'. Kill it? (y/n): ").lower()
                                         if confirm == 'y':
-                                            # Kill the process
                                             kill_cmd = f'taskkill /F /PID {process_id}'
                                             kill_result = subprocess.run(kill_cmd, shell=True, capture_output=True,
                                                                          text=True)
                                             if kill_result.returncode == 0:
-                                                print(
-                                                    f"✅ Successfully terminated process {parts[0]} (PID: {process_id})")
+                                                print(f"✅ Terminated process {parts[0]} (PID: {process_id})")
                                                 killed_processes.append(parts[0])
                                             else:
                                                 print(f"❌ Failed to terminate process: {kill_result.stderr}")
                                 except ValueError:
-                                    # Skip if process ID is not a number
                                     continue
 
-                    # Now run the upgrades
                     if killed_processes:
                         print(f"\nTerminated {len(killed_processes)} processes: {', '.join(killed_processes)}")
 
@@ -734,8 +613,8 @@ def main():
             else:
                 print("Invalid choice. Skipping software updates.")
 
-    except Exception as specific_error:
-        print(f"Error processing software updates: {str(specific_error)}")
+    except Exception as e:
+        print(f"Error processing software updates: {e}")
         print("Proceeding with standard update method.")
         if run_command("winget upgrade --all --include-unknown", "Update software with Winget") == 0:
             success_count += 1
@@ -757,7 +636,7 @@ def main():
     # Final summary
     print(f"\n\n{'=' * 60}")
 
-    # Show more accurate completion status
+    # Show completion status
     pending_count = len(restart_required_ops)
     immediate_success = success_count - pending_count
 
@@ -775,13 +654,12 @@ def main():
 
     print(f"{'=' * 60}")
 
-    # Prompt for system restart
+    # Prompt for restart
     if pending_count > 0:
         restart_message = f"\nSystem restart required to complete {pending_count} maintenance tasks."
         restart_prompt = input(f"{restart_message} Would you like to restart now? (y/n): ").lower()
     else:
-        restart_prompt = input("\nMaintenance complete. Would you like to restart your computer "
-                               "to apply all changes? (y/n): ").lower()
+        restart_prompt = input("\nMaintenance complete. Would you like to restart your computer now? (y/n): ").lower()
 
     if restart_prompt == 'y':
         print("\nSaving any remaining work and restarting in 10 seconds...")
@@ -798,7 +676,6 @@ def main():
 
 
 if __name__ == "__main__":
-    # Create manifest file for UAC elevation when compiled to exe
+    # Create manifest file for UAC elevation
     create_manifest_file()
-
     main()
